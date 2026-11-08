@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">MedShift</string>
+    <string name="header_subtitle">Controle Clínico &amp; Escala de Plantões</string>
+    <string name="offline_ready_badge">Banco Local Room • Offline Ativo</string>
+    <string name="kpi_current_shifts">Em Plantão Agora</string>
+    <string name="kpi_upcoming_shifts">Próximos Plantões</string>
+    <string name="kpi_medical_staff">Corpo Clínico</string>
+    <string name="kpi_admin_staff">Gestão &amp; Admin</string>
+    <string name="search_placeholder">Buscar médico, gestor, CRM ou setor…</string>
+    <string name="filter_all">Todos</string>
+    <string name="filter_current">Em Plantão (Ativos)</string>
+    <string name="filter_upcoming">Próximos Plantões</string>
+    <string name="filter_medical">Médicos</string>
+    <string name="filter_admin">Administrativo</string>
+    <string name="section_current_shifts">Plantões em Andamento (Tempo Real)</string>
+    <string name="section_upcoming_shifts">Próximos Plantões Escalonados</string>
+    <string name="section_completed_shifts">Plantões Concluídos Recentemente</string>
+    <string name="fab_new_shift">Novo Plantão</string>
+    <string name="voice_quick_entry">Cadastro por Voz</string>
+    <string name="empty_shifts_title">Nenhum plantão encontrado</string>
+    <string name="empty_shifts_subtitle">Ajuste os filtros de busca ou cadastre um novo plantão clínico ou administrativo por toque ou comando de voz.</string>
+    <string name="btn_start_shift">Iniciar Plantão</string>
+    <string name="btn_complete_shift">Concluir</string>
+    <string name="btn_delete_shift">Remover</string>
+    <string name="on_call_badge">Sobreaviso</string>
+    <string name="voice_badge">Criado por Voz</string>
+    <string name="modal_add_title">Cadastrar Plantão Clínico / Admin</string>
+    <string name="btn_save_shift">Salvar no Banco Room</string>
+    <string name="btn_cancel">Cancelar</string>
+</resources>

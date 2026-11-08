@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Médicos a Postos — Registro clínico com rastreabilidade</title>
+
+  <meta
+    name="description"
+    content="Sistema simples para médicos autônomos e clínicas pequenas registrarem decisões clínicas com histórico organizado, rastreabilidade e apoio documental."
+  />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@450;550;650;750;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --accent: #087f67;
+      --accent-dark: #05604e;
+      --accent-soft: rgba(8, 127, 103, 0.12);
+      --text: #14302a;
+      --muted: #5c726c;
+      --border: #d5e3df;
+      --panel: #ffffff;
+      --bg: #f0f6f4;
+      --shadow: 0 4px 6px -1px rgba(20, 48, 42, 0.04), 0 16px 40px -8px rgba(20, 48, 42, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1100px 480px at 8% -12%, rgba(8, 127, 103, 0.1), transparent 55%),
+        linear-gradient(160deg, #edf8f5 0%, var(--bg) 45%, #eef4f2 100%);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 36px 20px;
+    }
+
+    .hero, .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 44px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      padding: 30px;
+      margin: 24px 0;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-weight: 750;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: clamp(1.85rem, 4vw, 2.5rem);
+      line-height: 1.15;
+      margin: 0 0 18px;
+      color: var(--text);
+      letter-spacing: -0.03em;
+      font-weight: 800;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      color: var(--text);
+      font-size: 1.45rem;
+      letter-spacing: -0.02em;
+      font-weight: 750;
+    }
+
+    p {
+      font-size: 1.05rem;
+      margin: 10px 0;
+      color: var(--muted);
+    }
+
+    .subtitle {
+      font-size: 1.2rem;
+      color: #3d564f;
+      margin-bottom: 24px;
+      max-width: 760px;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 18px;
+    }
+
+    .button {
+      display: inline-block;
+      background: var(--accent);
+      color: #ffffff;
+      text-decoration: none;
+      padding: 14px 22px;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 750;
+      text-align: center;
+      box-shadow: 0 1px 2px rgba(5, 96, 78, 0.25);
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    .button:hover { background: var(--accent-dark); }
+    .button:focus-visible { outline: 3px solid rgba(8, 127, 103, 0.28); outline-offset: 2px; }
+
+    .button.secondary {
+      background: #14302a;
+      box-shadow: none;
+    }
+
+    .button.secondary:hover { background: #0c1f1b; }
+
+    .button.ghost {
+      background: #e6f2ef;
+      color: var(--accent-dark);
+      box-shadow: none;
+    }
+
+    .button.ghost:hover { background: #d5ebe5; }
+
+    .note {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-top: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .mini-card {
+      background: #f7fbfa;
+      border: 1px solid var(--border);
+      padding: 18px;
+      border-radius: 14px;
+      font-size: 0.98rem;
+      color: var(--muted);
+      box-shadow: 0 1px 2px rgba(20, 48, 42, 0.04);
+    }
+
+    .mini-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--text);
+      font-size: 1.02rem;
+    }
+
+    .demo-box {
+      background: #0f2a24;
+      color: #e5eeeb;
+      padding: 24px;
+      border-radius: 14px;
+      margin-top: 18px;
+    }
+
+    .demo-line {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 0.98rem;
+    }
+
+    .demo-line:last-child { border-bottom: none; }
+    .demo-line strong { color: #9fd6c7; }
+
+    .price-card {
+      background: linear-gradient(180deg, #f3faf7, #fff);
+      border: 1px solid #b7ddd3;
+      text-align: center;
+    }
+
+    .price {
+      font-size: 2.35rem;
+      font-weight: 800;
+      color: var(--accent);
+      margin: 10px 0 4px;
+      letter-spacing: -0.03em;
+    }
+
+    .small {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 28px 0 10px;
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .footer-links a {
+      color: var(--accent-dark);
+      font-weight: 650;
+      text-decoration: none;
+    }
+
+    .footer-links a:hover { text-decoration: underline; }
+
+    @media (max-width: 720px) {
+      .hero { padding: 28px; }
+      .card { padding: 24px; }
+      .grid { grid-template-columns: 1fr; }
+      .button { width: 100%; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+
+    <section class="hero">
+      <span class="badge">Para médicos autônomos e clínicas pequenas</span>
+
+      <h1>Você pode ter dificuldade para se defender depois se não documenta suas decisões clínicas.</h1>
+
+      <p class="subtitle">
+        O Médicos a Postos ajuda você a registrar decisões, condutas e observações em um histórico organizado,
+        rastreável e fácil de consultar.
+      </p>
+
+      <div class="button-row">
+        <a href="/app.html" class="button secondary">Abrir área de registros</a>
+
+        <a
+          href="https://wa.me/5521997875539?text=Quero%20testar%20o%20M%C3%A9dicos%20a%20Postos"
+          class="button"
+        >
+          Falar no WhatsApp agora
+        </a>
+
+        <a href="#demo" class="button ghost">Ver exemplo</a>
+      </div>
+
+      <p class="note">Resposta rápida pelo WhatsApp. Sem compromisso. Acesso inicial por R$46/mês.</p>
+    </section>
+
+    <section class="card">
+      <h2>O problema não é só atender. É conseguir mostrar o que foi decidido.</h2>
+
+      <p>
+        Muitos profissionais registram decisões clínicas em anotações soltas, mensagens, memória ou sistemas difíceis de consultar.
+      </p>
+
+      <p>
+        Quando aparece uma dúvida, reclamação ou questionamento, a pergunta vira:
+        onde está o registro claro do que foi feito, quando foi feito e por qual motivo?
+      </p>
+
+      <div class="button-row">
+        <a
+          href="https://wa.me/5521997875539?text=Quero%20entender%20o%20M%C3%A9dicos%20a%20Postos"
+          class="button"
+        >
+          Quero entender pelo WhatsApp
+        </a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>A solução</h2>
+
+      <p>
+        Um sistema simples para documentar decisões clínicas e manter um histórico consultável por paciente.
+      </p>
+
+      <div class="grid">
+        <div class="mini-card">
+          <strong>Registro de decisões</strong>
+          Documente condutas, observações e decisões relevantes do atendimento.
+        </div>
+
+        <div class="mini-card">
+          <strong>Histórico por paciente</strong>
+          Consulte registros anteriores sem depender de memória ou mensagens perdidas.
+        </div>
+
+        <div class="mini-card">
+          <strong>Rastreabilidade</strong>
+          Saiba o que foi registrado, quando foi registrado e em qual contexto.
+        </div>
+
+        <div class="mini-card">
+          <strong>Uso simples</strong>
+          Pensado para funcionar rápido, sem implantação pesada.
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="demo">
+      <h2>Exemplo de registro</h2>
+
+      <p>Simulação de como uma decisão clínica pode ficar organizada dentro do sistema:</p>
+
+      <div class="demo-box">
+        <div class="demo-line"><strong>Paciente:</strong> Maria S.</div>
+        <div class="demo-line"><strong>Data:</strong> 05/05/2026</div>
+        <div class="demo-line"><strong>Contexto:</strong> Retorno após avaliação inicial.</div>
+        <div class="demo-line"><strong>Conduta:</strong> Orientação registrada e acompanhamento indicado.</div>
+        <div class="demo-line"><strong>Decisão clínica:</strong> Manter observação e revisar evolução em consulta futura.</div>
+        <div class="demo-line"><strong>Status:</strong> Registro salvo com histórico rastreável.</div>
+      </div>
+
+      <p class="note">
+        Substitua esta simulação por um print real ou vídeo curto do sistema assim que possível. Isso aumenta confiança.
+      </p>
+
+      <div class="button-row">
+        <a
+          href="https://wa.me/5521997875539?text=Quero%20ver%20como%20funciona%20o%20M%C3%A9dicos%20a%20Postos"
+          class="button"
+        >
+          Ver como funciona no WhatsApp
+        </a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Para quem é</h2>
+
+      <div class="grid">
+        <div class="mini-card">
+          <strong>Médicos autônomos</strong>
+          Para quem quer organizar melhor o histórico dos atendimentos.
+        </div>
+
+        <div class="mini-card">
+          <strong>Clínicas pequenas</strong>
+          Para equipes que precisam padronizar registros sem sistema complexo.
+        </div>
+
+        <div class="mini-card">
+          <strong>Atendimentos recorrentes</strong>
+          Para acompanhar evolução, condutas e observações por paciente.
+        </div>
+
+        <div class="mini-card">
+          <strong>Rotina com pouco tempo</strong>
+          Para registrar rápido e consultar quando necessário.
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Como funciona</h2>
+
+      <p><strong style="color:var(--text)">1.</strong> Você registra paciente, contexto e decisão clínica.</p>
+      <p><strong style="color:var(--text)">2.</strong> O sistema organiza o histórico de forma simples.</p>
+      <p><strong style="color:var(--text)">3.</strong> Você consulta os registros quando precisar revisar um caso.</p>
+      <p><strong style="color:var(--text)">4.</strong> Tudo fica mais claro, documentado e rastreável.</p>
+
+      <div class="button-row">
+        <a
+          href="https://wa.me/5521997875539?text=Quero%20testar%20o%20fluxo%20do%20M%C3%A9dicos%20a%20Postos"
+          class="button secondary"
+        >
+          Quero testar o fluxo
+        </a>
+      </div>
+    </section>
+
+    <section class="card price-card">
+      <h2>Oferta inicial</h2>
+
+      <p>Estamos liberando acesso manualmente para os primeiros usuários.</p>
+
+      <p class="price">R$46/mês</p>
+
+      <p>
+        Ideal para validar o uso, organizar os primeiros registros e testar a rotina com segurança.
+      </p>
+
+      <div class="button-row" style="justify-content:center;">
+        <a
+          href="https://wa.me/5521997875539?text=Quero%20acesso%20ao%20M%C3%A9dicos%20a%20Postos%20por%20R%2446%2Fm%C3%AAs"
+          class="button"
+        >
+          Quero meu acesso
+        </a>
+      </div>
+
+      <p class="note">Sem compromisso. Você fala direto comigo pelo WhatsApp.</p>
+    </section>
+
+    <footer class="footer">
+      <p>Médicos a Postos — Registro clínico com rastreabilidade.</p>
+      <p class="small">
+        Importante: este sistema ajuda na organização, documentação e rastreabilidade dos registros.
+        Ele não substitui avaliação médica, prontuário oficial, obrigação ética ou orientação jurídica.
+      </p>
+      <div class="footer-links">
+        <a href="/privacy.html">Privacidade</a>
+        <a href="/terms.html">Termos</a>
+        <a href="/support.html">Suporte</a>
+      </div>
+    </footer>
+
+  </main>
+</body>
+</html>

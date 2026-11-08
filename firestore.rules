@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidCloudShift(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.staffName is string && data.staffName.size() >= 1 && data.staffName.size() <= 120 &&
+             data.roleTitle is string && data.roleTitle.size() >= 1 && data.roleTitle.size() <= 120 &&
+             data.crmOrRegistry is string && data.crmOrRegistry.size() >= 1 && data.crmOrRegistry.size() <= 60 &&
+             data.department is string && data.department.size() >= 1 && data.department.size() <= 100 &&
+             data.category is string && (data.category == 'MEDICAL' || data.category == 'ADMIN') &&
+             data.shiftStatus is string && (data.shiftStatus == 'CURRENT' || data.shiftStatus == 'UPCOMING' || data.shiftStatus == 'COMPLETED') &&
+             data.shiftTimeLabel is string && data.shiftTimeLabel.size() >= 1 && data.shiftTimeLabel.size() <= 80 &&
+             data.dateLabel is string && data.dateLabel.size() >= 1 && data.dateLabel.size() <= 80 &&
+             data.locationRoom is string && data.locationRoom.size() >= 1 && data.locationRoom.size() <= 120 &&
+             data.permissionLevel is string && data.permissionLevel.size() >= 1 && data.permissionLevel.size() <= 100 &&
+             data.notes is string && data.notes.size() <= 500 &&
+             data.voiceTranscript is string && data.voiceTranscript.size() <= 500 &&
+             data.isOnCall is bool &&
+             data.createdViaVoice is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId}/shifts/{shiftId} {
+      allow get: if isOwner(userId) && isValidId(userId) && isValidId(shiftId) && existing().userId == request.auth.uid;
+      allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidId(shiftId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'staffName', 'roleTitle', 'crmOrRegistry', 'department',
+                         'category', 'shiftStatus', 'shiftTimeLabel', 'dateLabel',
+                         'locationRoom', 'permissionLevel', 'notes', 'voiceTranscript',
+                         'isOnCall', 'createdViaVoice', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'staffName', 'roleTitle', 'crmOrRegistry', 'department',
+                         'category', 'shiftStatus', 'shiftTimeLabel', 'dateLabel',
+                         'locationRoom', 'permissionLevel', 'notes', 'voiceTranscript',
+                         'isOnCall', 'createdViaVoice', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidCloudShift(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidId(shiftId) &&
+                       isValidCloudShift(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'staffName', 'roleTitle', 'crmOrRegistry', 'department',
+                         'category', 'shiftStatus', 'shiftTimeLabel', 'dateLabel',
+                         'locationRoom', 'permissionLevel', 'notes', 'voiceTranscript',
+                         'isOnCall', 'createdViaVoice', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(shiftId) && existing().userId == request.auth.uid;
+    }
+  }
+}

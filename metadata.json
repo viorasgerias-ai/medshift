@@ -1,0 +1,6 @@
+{
+  "name": "MedShift",
+  "description": "Clinical and administrative medical staff shift management with offline Room persistence and voice registration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

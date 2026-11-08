@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "CloudShift": {
+      "title": "CloudShift",
+      "description": "Medical or administrative staff shift stored in Firestore and synchronized with local Room database.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID of the shift record."
+        },
+        "staffName": {
+          "type": "string",
+          "description": "Full name of the medical or administrative staff member."
+        },
+        "roleTitle": {
+          "type": "string",
+          "description": "Role or medical specialty title."
+        },
+        "crmOrRegistry": {
+          "type": "string",
+          "description": "CRM or administrative registration code."
+        },
+        "department": {
+          "type": "string",
+          "description": "Hospital unit, ward, or administrative department."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["MEDICAL", "ADMIN"],
+          "description": "Category of the shift: MEDICAL or ADMIN."
+        },
+        "shiftStatus": {
+          "type": "string",
+          "enum": ["CURRENT", "UPCOMING", "COMPLETED"],
+          "description": "Current operational status of the shift."
+        },
+        "shiftTimeLabel": {
+          "type": "string",
+          "description": "Scheduled shift time window and duration."
+        },
+        "dateLabel": {
+          "type": "string",
+          "description": "Readable date or shift turn label."
+        },
+        "locationRoom": {
+          "type": "string",
+          "description": "Physical wing, room, or bed range."
+        },
+        "permissionLevel": {
+          "type": "string",
+          "description": "Real-time clinical or administrative permission level."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Clinical handoff notes or voice command transcript."
+        },
+        "voiceTranscript": {
+          "type": "string",
+          "description": "Raw spoken Speech-to-Text command used to create the shift."
+        },
+        "isOnCall": {
+          "type": "boolean",
+          "description": "Whether the staff member is on-call (sobreaviso)."
+        },
+        "createdViaVoice": {
+          "type": "boolean",
+          "description": "Whether this shift was created via Speech-to-Text voice command."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (must use FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (must use FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "staffName",
+        "roleTitle",
+        "crmOrRegistry",
+        "department",
+        "category",
+        "shiftStatus",
+        "shiftTimeLabel",
+        "dateLabel",
+        "locationRoom",
+        "permissionLevel",
+        "notes",
+        "voiceTranscript",
+        "isOnCall",
+        "createdViaVoice",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/shifts/{shiftId}": {
+      "schema": {
+        "$ref": "#/entities/CloudShift"
+      },
+      "description": "Per-user isolated collection of medical and administrative staff shifts."
+    }
+  }
+}
