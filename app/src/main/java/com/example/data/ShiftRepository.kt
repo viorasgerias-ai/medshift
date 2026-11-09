@@ -1,5 +1,10 @@
 package com.example.data
 
+import com.example.governance.ClinicalCaseEntity
+import com.example.governance.CloudClinicalCase
+import com.example.governance.GovernanceStatus
+import com.example.governance.LgpdTextRedactor
+import com.example.governance.TcriaGovernanceEngine
 import kotlinx.coroutines.flow.Flow
 
 class ShiftRepository(private val shiftDao: ShiftDao) {
@@ -10,16 +15,35 @@ class ShiftRepository(private val shiftDao: ShiftDao) {
 
     val upcomingShifts: Flow<List<ShiftEntity>> = shiftDao.getShiftsByStatus("UPCOMING")
 
+    val allClinicalCases: Flow<List<ClinicalCaseEntity>> = shiftDao.getAllClinicalCases()
+
     suspend fun insert(shift: ShiftEntity): Long {
-        return shiftDao.insertShift(shift)
+        val sanitized = LgpdTextRedactor.sanitizeShiftEntity(shift)
+        return shiftDao.insertShift(sanitized)
     }
 
     suspend fun update(shift: ShiftEntity) {
-        shiftDao.updateShift(shift)
+        val sanitized = LgpdTextRedactor.sanitizeShiftEntity(shift)
+        shiftDao.updateShift(sanitized)
     }
 
     suspend fun deleteById(id: Int) {
         shiftDao.deleteShiftById(id)
+    }
+
+    suspend fun deleteByIds(ids: List<Int>) {
+        if (ids.isNotEmpty()) {
+            shiftDao.deleteShiftsByIds(ids)
+        }
+    }
+
+    suspend fun insertClinicalCase(clinicalCase: ClinicalCaseEntity): Long {
+        val sanitized = LgpdTextRedactor.sanitizeClinicalCaseEntity(clinicalCase)
+        return shiftDao.insertClinicalCase(sanitized)
+    }
+
+    suspend fun deleteClinicalCaseById(id: Int) {
+        shiftDao.deleteClinicalCaseById(id)
     }
 
     suspend fun syncCloudShiftsToRoom(cloudShifts: List<CloudShift>) {
@@ -36,40 +60,156 @@ class ShiftRepository(private val shiftDao: ShiftDao) {
                 "COMPLETED" -> 1.0f
                 else -> 0.0f
             }
-            val mapped = ShiftEntity(
-                id = existing?.id ?: 0,
-                firebaseDocId = cloud.id,
-                staffName = cloud.staffName,
-                roleTitle = cloud.roleTitle,
-                crmOrRegistry = cloud.crmOrRegistry,
-                department = cloud.department,
-                category = cloud.category,
-                shiftStatus = cloud.shiftStatus,
-                shiftTimeLabel = cloud.shiftTimeLabel,
-                dateLabel = cloud.dateLabel,
-                locationRoom = cloud.locationRoom,
-                permissionLevel = cloud.permissionLevel,
-                notes = cloud.notes,
-                voiceTranscript = cloud.voiceTranscript,
-                progressFraction = progress,
-                isOnCall = cloud.isOnCall,
-                createdViaVoice = cloud.createdViaVoice,
-                sortPriority = priority,
-                timestamp = cloud.updatedAt?.toDate()?.time
-                    ?: cloud.createdAt?.toDate()?.time
-                    ?: System.currentTimeMillis()
+            val mapped = LgpdTextRedactor.sanitizeShiftEntity(
+                ShiftEntity(
+                    id = existing?.id ?: 0,
+                    firebaseDocId = cloud.id,
+                    staffName = cloud.staffName,
+                    roleTitle = cloud.roleTitle,
+                    crmOrRegistry = cloud.crmOrRegistry,
+                    department = cloud.department,
+                    category = cloud.category,
+                    shiftStatus = cloud.shiftStatus,
+                    shiftTimeLabel = cloud.shiftTimeLabel,
+                    dateLabel = cloud.dateLabel,
+                    locationRoom = cloud.locationRoom,
+                    permissionLevel = cloud.permissionLevel,
+                    notes = cloud.notes,
+                    voiceTranscript = cloud.voiceTranscript,
+                    progressFraction = progress,
+                    isOnCall = cloud.isOnCall,
+                    createdViaVoice = cloud.createdViaVoice,
+                    sortPriority = priority,
+                    timestamp = cloud.updatedAt?.toDate()?.time
+                        ?: cloud.createdAt?.toDate()?.time
+                        ?: System.currentTimeMillis()
+                )
             )
             shiftDao.insertShift(mapped)
         }
     }
 
+    suspend fun syncCloudCasesToRoom(cloudCases: List<CloudClinicalCase>) {
+        for (cloud in cloudCases) {
+            if (cloud.id.isBlank()) continue
+            val existing = shiftDao.getClinicalCaseByFirebaseDocId(cloud.id)
+            val mapped = LgpdTextRedactor.sanitizeClinicalCaseEntity(
+                ClinicalCaseEntity(
+                    id = existing?.id ?: 0,
+                    firebaseDocId = cloud.id,
+                    projectClinicAnchor = cloud.projectClinicAnchor,
+                    clinicUf = cloud.clinicUf,
+                    clinicSpecialty = cloud.clinicSpecialty,
+                    caseReference = cloud.caseReference,
+                    responsibleHuman = cloud.responsibleHuman,
+                    declaredPurpose = cloud.declaredPurpose,
+                    contextScope = cloud.contextScope,
+                    evidencias = cloud.evidencias,
+                    raciocinio = cloud.raciocinio,
+                    decisao = cloud.decisao,
+                    deidentificationConfirmed = cloud.deidentificationConfirmed,
+                    governanceStatus = cloud.governanceStatus,
+                    governanceReport = cloud.governanceReport,
+                    createdViaVoice = cloud.createdViaVoice,
+                    timestamp = cloud.updatedAt?.toDate()?.time
+                        ?: cloud.createdAt?.toDate()?.time
+                        ?: System.currentTimeMillis()
+                )
+            )
+            shiftDao.insertClinicalCase(mapped)
+        }
+    }
+
+
     suspend fun seedInitialDataIfEmpty() {
         if (shiftDao.getShiftCount() == 0) {
             shiftDao.insertAll(defaultSampleShifts())
         }
+        if (shiftDao.getClinicalCaseCount() == 0) {
+            shiftDao.insertAllClinicalCases(defaultSampleClinicalCases())
+        }
     }
 
     companion object {
+        fun defaultSampleClinicalCases(): List<ClinicalCaseEntity> {
+            val rawCases = listOf(
+                ClinicalCaseEntity(
+                    projectClinicAnchor = "Clínica Médicos a Postos • Unidade Central",
+                    clinicUf = "RJ",
+                    clinicSpecialty = "Clínica Geral & Emergência",
+                    caseReference = "CASO-001 • Maria S. (Desidentificado)",
+                    responsibleHuman = "Dra. Helena Vasconcelos (CRM-RJ 52.10482-9)",
+                    declaredPurpose = "Continuidade assistencial e passagem de plantão auditável",
+                    contextScope = "Atendimento inicial em Sala de Observação • Quadro subagudo 48h",
+                    evidencias = "Queixa álgica torácica atípica há 48h, PA 138/86 mmHg, SpO2 98%, ECG sem supra de ST e troponina seriada negativa.",
+                    raciocinio = "Evolução clínica compatível com dor osteomuscular sem sinais de alarme coronariano agudo após seriação enzimática.",
+                    decisao = "Conduta conservadora analgésica, orientação de sinais de alarme por escrito e retorno ambulatorial em 72h.",
+                    deidentificationConfirmed = true,
+                    createdViaVoice = false
+                ),
+                ClinicalCaseEntity(
+                    projectClinicAnchor = "Clínica Médicos a Postos • Unidade Central",
+                    clinicUf = "RJ",
+                    clinicSpecialty = "Terapia Intensiva Adulto",
+                    caseReference = "CASO-002 • Leito 04 UTI (J.P.M.)",
+                    responsibleHuman = "Dr. Rafael Mendonça (CRM-SP 162.814)",
+                    declaredPurpose = "Rastreabilidade de ajuste hemodinâmico em plantão diurno",
+                    contextScope = "Pós-operatório imediato de trauma abdominal • 6ª hora de UTI",
+                    evidencias = "PAM 68 mmHg, lactato arterial caiu de 3.4 para 1.8 mmol/L, diurese 1.1 mL/kg/h após expansão volêmica cristalóide.",
+                    raciocinio = "Melhora da perfusão tecidual periférica e clareamento de lactato demonstram resposta adequada à ressuscitação inicial.",
+                    decisao = "Desmame gradual de noradrenalina para 0.04 mcg/kg/min e nova gasometria arterial em 4 horas.",
+                    deidentificationConfirmed = true,
+                    createdViaVoice = true
+                ),
+                ClinicalCaseEntity(
+                    projectClinicAnchor = "Clínica Médicos a Postos • Unidade Central",
+                    clinicUf = "RJ",
+                    clinicSpecialty = "Auditoria & Regulação Administrativa",
+                    caseReference = "CASO-003 • Revisão de Prontuário Setor B",
+                    responsibleHuman = "Dr. Lucas Cavalcanti (CRM-SP 191.044)",
+                    declaredPurpose = "Auditoria de conformidade de prescrição antimicrobiana",
+                    contextScope = "Enfermaria Clínica • Revisão de 2ª Camada TCRIA",
+                    evidencias = "",
+                    raciocinio = "Solicitação de troca de esquema antibiótico empírico durante turno noturno.",
+                    decisao = "Escalonamento imediato para meropenem aguardando revisão da CCIH pela manhã.",
+                    deidentificationConfirmed = true,
+                    createdViaVoice = false
+                ),
+                ClinicalCaseEntity(
+                    projectClinicAnchor = "Clínica Médicos a Postos • Unidade Central",
+                    clinicUf = "RJ",
+                    clinicSpecialty = "Triagem & Admissão Digital",
+                    caseReference = "CASO-004 • Ficha Bruta Não Saneada",
+                    responsibleHuman = "Marcos Vinícius Prado (ADM-CL 0892)",
+                    declaredPurpose = "Importação automática de formulário externo para triagem",
+                    contextScope = "Recepção Central • Registro bloqueado pelo Gate LGPD",
+                    evidencias = "Ficha recebida com CPF 123.456.789-00 e contato paciente.teste@exemplo.com no corpo da evolução.",
+                    raciocinio = "Tentativa de indexação direta antes da anonimização dos dados sensíveis.",
+                    decisao = "Retido na camada de revisão de artefatos bloqueados até remoção de PII.",
+                    deidentificationConfirmed = true,
+                    createdViaVoice = false
+                )
+            )
+
+            return rawCases.map { item ->
+                val eval = TcriaGovernanceEngine.evaluateCase(
+                    projectClinicAnchor = item.projectClinicAnchor,
+                    caseReference = item.caseReference,
+                    responsibleHuman = item.responsibleHuman,
+                    declaredPurpose = item.declaredPurpose,
+                    contextScope = item.contextScope,
+                    evidencias = item.evidencias,
+                    raciocinio = item.raciocinio,
+                    decisao = item.decisao,
+                    deidentificationConfirmed = item.deidentificationConfirmed
+                )
+                item.copy(
+                    governanceStatus = eval.overallStatus.name,
+                    governanceReport = eval.auditSummary
+                )
+            }
+        }
+
         fun defaultSampleShifts(): List<ShiftEntity> = listOf(
             ShiftEntity(
                 staffName = "Dra. Helena Vasconcelos",
@@ -212,3 +352,4 @@ class ShiftRepository(private val shiftDao: ShiftDao) {
         )
     }
 }
+

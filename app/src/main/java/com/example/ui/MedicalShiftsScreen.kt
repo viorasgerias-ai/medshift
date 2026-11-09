@@ -1,10 +1,16 @@
 package com.example.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,7 +39,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Mic
@@ -42,12 +51,16 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Room
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.MedicalServices
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -59,12 +72,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -73,7 +90,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -83,6 +102,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.ShiftEntity
+import kotlinx.coroutines.launch
 
 @Composable
 fun MedicalShiftsScreen(
@@ -94,37 +114,70 @@ fun MedicalShiftsScreen(
     val voiceAiState by viewModel.voiceAiState.collectAsStateWithLifecycle()
     var showAddShiftSheet by rememberSaveable { mutableStateOf(false) }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Exit multi-select mode when the system Back button is pressed
+    BackHandler(enabled = uiState.isMultiSelectMode) {
+        viewModel.clearSelection()
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets.safeDrawing,
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showAddShiftSheet = true },
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = stringResource(R.string.fab_new_shift)
-                    )
-                },
-                text = {
-                    Text(
-                        text = stringResource(R.string.fab_new_shift),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag("fab_add_shift")
-            )
+            if (!uiState.isMultiSelectMode) {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddShiftSheet = true },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = stringResource(R.string.fab_new_shift)
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = stringResource(R.string.fab_new_shift),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.testTag("fab_add_shift")
+                )
+            }
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Contextual Multi-Select Action Bar
+            AnimatedVisibility(
+                visible = uiState.isMultiSelectMode,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                MultiSelectActionBar(
+                    selectedCount = uiState.selectedShiftIds.size,
+                    onSelectAll = viewModel::selectAllVisibleShifts,
+                    onClearSelection = viewModel::clearSelection,
+                    onBulkDelete = {
+                        viewModel.deleteSelectedShifts { deletedCount ->
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    message = "$deletedCount plantão(ões) excluído(s) com sucesso"
+                                )
+                            }
+                        }
+                    }
+                )
+            }
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -175,13 +228,14 @@ fun MedicalShiftsScreen(
                     )
                 }
 
-                // 3. Search & Category/Status Filter Bar
+                // 3. Search & Category/Status Filter Bar + Multi-select tip
                 item(key = "search_and_filters") {
                     SearchAndFilterSection(
                         searchQuery = uiState.searchQuery,
                         onSearchQueryChange = viewModel::setSearchQuery,
                         selectedFilter = uiState.selectedFilter,
-                        onFilterSelected = viewModel::setFilter
+                        onFilterSelected = viewModel::setFilter,
+                        isMultiSelectMode = uiState.isMultiSelectMode
                     )
                 }
 
@@ -202,6 +256,9 @@ fun MedicalShiftsScreen(
                     ) { shift ->
                         ShiftItemCard(
                             shift = shift,
+                            isMultiSelectMode = uiState.isMultiSelectMode,
+                            isSelected = shift.id in uiState.selectedShiftIds,
+                            onToggleSelect = { viewModel.toggleShiftSelection(shift.id) },
                             onStartShift = { viewModel.startShift(shift) },
                             onCompleteShift = { viewModel.completeShift(shift) },
                             onDeleteShift = { viewModel.deleteShift(shift) }
@@ -226,6 +283,9 @@ fun MedicalShiftsScreen(
                     ) { shift ->
                         ShiftItemCard(
                             shift = shift,
+                            isMultiSelectMode = uiState.isMultiSelectMode,
+                            isSelected = shift.id in uiState.selectedShiftIds,
+                            onToggleSelect = { viewModel.toggleShiftSelection(shift.id) },
                             onStartShift = { viewModel.startShift(shift) },
                             onCompleteShift = { viewModel.completeShift(shift) },
                             onDeleteShift = { viewModel.deleteShift(shift) }
@@ -250,6 +310,9 @@ fun MedicalShiftsScreen(
                     ) { shift ->
                         ShiftItemCard(
                             shift = shift,
+                            isMultiSelectMode = uiState.isMultiSelectMode,
+                            isSelected = shift.id in uiState.selectedShiftIds,
+                            onToggleSelect = { viewModel.toggleShiftSelection(shift.id) },
                             onStartShift = { viewModel.startShift(shift) },
                             onCompleteShift = { viewModel.completeShift(shift) },
                             onDeleteShift = { viewModel.deleteShift(shift) }
@@ -284,6 +347,104 @@ fun MedicalShiftsScreen(
             onDismiss = { showAddShiftSheet = false },
             onSaveShift = viewModel::addShift
         )
+    }
+}
+
+@Composable
+private fun MultiSelectActionBar(
+    selectedCount: Int,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+    onBulkDelete: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 6.dp,
+        shadowElevation = 4.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("multi_select_action_bar")
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 760.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                IconButton(
+                    onClick = onClearSelection,
+                    modifier = Modifier.testTag("exit_multi_select_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.btn_clear_selection),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = "$selectedCount selecionado(s)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.testTag("selected_shifts_count_text")
+                    )
+                    Text(
+                        text = "Toque nos itens para marcar ou desmarcar",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onSelectAll,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    modifier = Modifier.testTag("select_all_shifts_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DoneAll,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.btn_select_all))
+                }
+
+                Button(
+                    onClick = onBulkDelete,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.testTag("bulk_delete_shifts_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = stringResource(R.string.btn_bulk_delete),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Excluir ($selectedCount)",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -587,7 +748,8 @@ private fun SearchAndFilterSection(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     selectedFilter: ShiftFilter,
-    onFilterSelected: (ShiftFilter) -> Unit
+    onFilterSelected: (ShiftFilter) -> Unit,
+    isMultiSelectMode: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
@@ -654,6 +816,26 @@ private fun SearchAndFilterSection(
                 )
             }
         }
+
+        if (!isMultiSelectMode) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(horizontal = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.TouchApp,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp)
+                )
+                Text(
+                    text = stringResource(R.string.multi_select_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -701,14 +883,19 @@ private fun SectionHeaderRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ShiftItemCard(
     shift: ShiftEntity,
+    isMultiSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onStartShift: () -> Unit,
     onCompleteShift: () -> Unit,
     onDeleteShift: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptics = LocalHapticFeedback.current
     val isCurrent = shift.shiftStatus == "CURRENT"
     val isUpcoming = shift.shiftStatus == "UPCOMING"
     val isAdmin = shift.category == "ADMIN"
@@ -719,23 +906,48 @@ fun ShiftItemCard(
         else -> MaterialTheme.colorScheme.outline
     }
 
+    val cardContainerColor = if (isSelected) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+
+    val borderColor = when {
+        isSelected -> MaterialTheme.colorScheme.primary
+        isCurrent -> statusColor.copy(alpha = 0.45f)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .combinedClickable(
+                onClick = {
+                    if (isMultiSelectMode) {
+                        onToggleSelect()
+                    }
+                },
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onToggleSelect()
+                }
+            )
             .testTag("shift_card_${shift.id}"),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = cardContainerColor
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isCurrent) 3.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected || isCurrent) 3.dp else 1.dp
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .border(
-                    width = if (isCurrent) 1.5.dp else 1.dp,
-                    color = if (isCurrent) statusColor.copy(alpha = 0.45f)
-                    else MaterialTheme.colorScheme.surfaceVariant,
+                    width = if (isSelected) 2.dp else if (isCurrent) 1.5.dp else 1.dp,
+                    color = borderColor,
                     shape = MaterialTheme.shapes.medium
                 )
                 .padding(16.dp),
@@ -750,6 +962,20 @@ fun ShiftItemCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    AnimatedVisibility(visible = isMultiSelectMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onToggleSelect() },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier
+                                .size(28.dp)
+                                .padding(end = 4.dp)
+                                .testTag("select_checkbox_${shift.id}")
+                        )
+                    }
+
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = statusColor.copy(alpha = 0.14f)
@@ -980,60 +1206,62 @@ fun ShiftItemCard(
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = onDeleteShift,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.testTag("delete_shift_${shift.id}")
+            if (!isMultiSelectMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = stringResource(R.string.btn_delete_shift),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(stringResource(R.string.btn_delete_shift))
-                }
-
-                if (isUpcoming) {
-                    FilledTonalButton(
-                        onClick = onStartShift,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    TextButton(
+                        onClick = onDeleteShift,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
-                        modifier = Modifier.testTag("start_shift_${shift.id}")
+                        modifier = Modifier.testTag("delete_shift_${shift.id}")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = null,
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = stringResource(R.string.btn_delete_shift),
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(R.string.btn_start_shift))
+                        Text(stringResource(R.string.btn_delete_shift))
                     }
-                } else if (isCurrent) {
-                    FilledTonalButton(
-                        onClick = onCompleteShift,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        modifier = Modifier.testTag("complete_shift_${shift.id}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(stringResource(R.string.btn_complete_shift))
+
+                    if (isUpcoming) {
+                        FilledTonalButton(
+                            onClick = onStartShift,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            ),
+                            modifier = Modifier.testTag("start_shift_${shift.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(stringResource(R.string.btn_start_shift))
+                        }
+                    } else if (isCurrent) {
+                        FilledTonalButton(
+                            onClick = onCompleteShift,
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            ),
+                            modifier = Modifier.testTag("complete_shift_${shift.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(stringResource(R.string.btn_complete_shift))
+                        }
                     }
                 }
             }

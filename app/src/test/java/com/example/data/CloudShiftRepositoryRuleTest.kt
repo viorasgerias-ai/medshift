@@ -82,6 +82,37 @@ class CloudShiftRepositoryRuleTest : FirestoreEmulatorTestBase() {
         }
     }
 
+    @Test
+    fun createClinicalCase_authenticatedOwner_createsAndEmitsCase() = runBlocking {
+        signInTestUser(ALICE_EMAIL)
+        val repository = CloudShiftRepository(firestore)
+        val sampleCase = com.example.governance.CloudClinicalCase(
+            projectClinicAnchor = "Clínica Médicos a Postos • Unidade Central",
+            clinicUf = "RJ",
+            clinicSpecialty = "Clínica Geral",
+            caseReference = "CASO-TEST-01",
+            responsibleHuman = "Dra. Helena Vasconcelos (CRM-RJ 52.10482-9)",
+            declaredPurpose = "Continuidade assistencial auditável",
+            contextScope = "Observação clínica 48h",
+            evidencias = "ECG normal e troponina negativa.",
+            raciocinio = "Evolução sem sinais de alarme coronariano.",
+            decisao = "Alta com orientação de retorno em 72h.",
+            deidentificationConfirmed = true,
+            governanceStatus = "VALID",
+            governanceReport = "Aprovado TCRIA"
+        )
+
+        val caseId = withTimeout(DEFAULT_TIMEOUT_MS) {
+            repository.createClinicalCase(sampleCase)
+        }
+        assertTrue(caseId.isNotBlank())
+
+        val emitted = withTimeout(FLOW_TIMEOUT_MS) {
+            repository.observeClinicalCases().first { list -> list.any { it.id == caseId } }
+        }
+        assertTrue(emitted.any { it.id == caseId && it.governanceStatus == "VALID" })
+    }
+
     private companion object {
         const val ALICE_EMAIL = "alice@medshift.test"
         const val BOB_EMAIL = "bob@medshift.test"
@@ -89,3 +120,4 @@ class CloudShiftRepositoryRuleTest : FirestoreEmulatorTestBase() {
         const val FLOW_TIMEOUT_MS = 3000L
     }
 }
+

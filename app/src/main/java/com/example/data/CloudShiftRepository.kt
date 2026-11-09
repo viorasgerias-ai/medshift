@@ -222,4 +222,105 @@ class CloudShiftRepository(private val db: FirebaseFirestore) {
             throw e
         }
     }
+
+    suspend fun deleteShifts(shiftIds: List<String>) {
+        val validIds = shiftIds.filter { it.isNotBlank() }
+        if (validIds.isEmpty()) return
+        val uid = requireUserId()
+        val collectionPath = "users/$uid/shifts"
+        try {
+            val batch = db.batch()
+            for (shiftId in validIds) {
+                val docRef = db.collection("users").document(uid).collection("shifts").document(shiftId)
+                batch.delete(docRef)
+            }
+            batch.commit().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, collectionPath)
+            throw e
+        }
+    }
+
+    fun observeClinicalCases(): Flow<List< com.example.governance.CloudClinicalCase >> = flow {
+        val uid = requireUserId()
+        val path = "users/$uid/clinical_cases"
+        emitAll(
+            db.collection("users")
+                .document(uid)
+                .collection("clinical_cases")
+                .whereEqualTo("userId", uid)
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        com.example.governance.CloudClinicalCase::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    )
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val exceptionToLog = firestoreError ?: (error as? Exception)
+                    if (exceptionToLog != null && auth.currentUser?.uid == uid) {
+                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                    }
+                    throw error
+                }
+        )
+    }
+
+    suspend fun createClinicalCase(clinicalCase: com.example.governance.CloudClinicalCase): String {
+        val uid = requireUserId()
+        val docRef = db.collection("users").document(uid).collection("clinical_cases").document()
+        val validStatus = when (clinicalCase.governanceStatus) {
+            "VALID", "WEAK", "BLOCKED", "INVALID" -> clinicalCase.governanceStatus
+            else -> "VALID"
+        }
+        val payload = mapOf(
+            "userId" to uid,
+            "projectClinicAnchor" to clinicalCase.projectClinicAnchor.ifBlank { "Clínica Médicos a Postos" }.take(150),
+            "clinicUf" to clinicalCase.clinicUf.ifBlank { "RJ" }.take(10),
+            "clinicSpecialty" to clinicalCase.clinicSpecialty.ifBlank { "Clínica Geral" }.take(100),
+            "caseReference" to clinicalCase.caseReference.ifBlank { "CASO-001" }.take(120),
+            "responsibleHuman" to clinicalCase.responsibleHuman.ifBlank { "Médico Plantonista" }.take(120),
+            "declaredPurpose" to clinicalCase.declaredPurpose.ifBlank { "Continuidade assistencial" }.take(300),
+            "contextScope" to clinicalCase.contextScope.ifBlank { "Atendimento clínico" }.take(400),
+            "evidencias" to clinicalCase.evidencias.take(1000),
+            "raciocinio" to clinicalCase.raciocinio.take(1000),
+            "decisao" to clinicalCase.decisao.take(1000),
+            "deidentificationConfirmed" to clinicalCase.deidentificationConfirmed,
+            "governanceStatus" to validStatus,
+            "governanceReport" to clinicalCase.governanceReport.take(800),
+            "createdViaVoice" to clinicalCase.createdViaVoice,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            docRef.set(payload).await()
+            return docRef.id
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun deleteClinicalCase(caseId: String) {
+        val uid = requireUserId()
+        require(caseId.isNotBlank()) { "Case ID must not be blank" }
+        val docRef = db.collection("users").document(uid).collection("clinical_cases").document(caseId)
+        try {
+            docRef.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            throw e
+        }
+    }
 }
+

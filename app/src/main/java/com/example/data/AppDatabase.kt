@@ -5,7 +5,13 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [ShiftEntity::class], version = 2, exportSchema = false)
+import com.example.governance.ClinicalCaseEntity
+
+@Database(
+    entities = [ShiftEntity::class, ClinicalCaseEntity::class],
+    version = 3,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun shiftDao(): ShiftDao
 

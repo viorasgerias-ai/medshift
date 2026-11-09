@@ -1,0 +1,17 @@
+{
+  "name": "medshift-tcria-cloudrun-api",
+  "version": "1.0.0",
+  "description": "Serverless Cloud Run backend for MedShift / Médicos a Postos with TCRIA Governance & LGPD Redaction",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.0.2"
+  }
+}

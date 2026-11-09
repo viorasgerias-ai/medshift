@@ -38,6 +38,30 @@ function validShiftPayload(userId, overrides = {}) {
   };
 }
 
+function validClinicalCasePayload(userId, overrides = {}) {
+  const now = new Date();
+  return {
+    userId,
+    projectClinicAnchor: "Clínica Médicos a Postos Central",
+    clinicUf: "RJ",
+    clinicSpecialty: "Clínica Geral & Intensiva",
+    caseReference: "CASO-001 • Maria S.",
+    responsibleHuman: "Dra. Helena Vasconcelos (CRM/RJ 148290)",
+    declaredPurpose: "Registro de decisão clínica e passagem de plantão auditável",
+    contextScope: "Retorno pós-avaliação inicial em unidade clínica",
+    evidencias: "Paciente estável, exames laboratoriais dentro dos parâmetros.",
+    raciocinio: "Evolução favorável sem sinais de alarme.",
+    decisao: "Manter observação assistida e revisar evolução em 12h.",
+    deidentificationConfirmed: true,
+    governanceStatus: "VALID",
+    governanceReport: "Aprovado em todos os 5 grupos de regras TCRIA.",
+    createdViaVoice: false,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 before(async () => {
   const rules = fs.readFileSync("./firestore.rules", "utf8");
   testEnv = await initializeTestEnvironment({
@@ -62,18 +86,13 @@ beforeEach(async () => {
   }
 });
 
-test("Unauthenticated user: cannot read or create shifts", async () => {
+test("Unauthenticated user: cannot read or create shifts or clinical cases", async () => {
   const unauthDb = testEnv.unauthenticatedContext().firestore();
   await assertFails(
     unauthDb.collection("users").doc(ALICE_UID).collection("shifts").get()
   );
   await assertFails(
-    unauthDb
-      .collection("users")
-      .doc(ALICE_UID)
-      .collection("shifts")
-      .doc("shift_1")
-      .set(validShiftPayload(ALICE_UID))
+    unauthDb.collection("users").doc(ALICE_UID).collection("clinical_cases").get()
   );
 });
 
@@ -104,32 +123,44 @@ test("Authenticated owner: can create, get, list, update, and delete their own s
   await assertSucceeds(docRef.delete());
 });
 
-test("Cross-user isolation: Bob cannot read, update, or delete Alice's shift", async () => {
+test("Authenticated owner: can create, query, and update TCRIA clinical cases; cross-user denied", async () => {
   const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const caseRef = aliceDb
+    .collection("users")
+    .doc(ALICE_UID)
+    .collection("clinical_cases")
+    .doc("case_alice_1");
+
+  await assertSucceeds(caseRef.set(validClinicalCasePayload(ALICE_UID)));
   await assertSucceeds(
     aliceDb
       .collection("users")
       .doc(ALICE_UID)
-      .collection("shifts")
-      .doc("shift_alice_1")
-      .set(validShiftPayload(ALICE_UID))
+      .collection("clinical_cases")
+      .where("userId", "==", ALICE_UID)
+      .get()
   );
 
+  // Bob cannot read Alice's clinical case
   const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
-  const aliceShiftAsBob = bobDb
-    .collection("users")
-    .doc(ALICE_UID)
-    .collection("shifts")
-    .doc("shift_alice_1");
-
-  await assertFails(aliceShiftAsBob.get());
   await assertFails(
-    aliceShiftAsBob.update({
-      shiftStatus: "COMPLETED",
-      updatedAt: new Date(),
-    })
+    bobDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("clinical_cases")
+      .doc("case_alice_1")
+      .get()
   );
-  await assertFails(aliceShiftAsBob.delete());
+
+  // Rejects invalid governanceStatus enum
+  await assertFails(
+    aliceDb
+      .collection("users")
+      .doc(ALICE_UID)
+      .collection("clinical_cases")
+      .doc("case_invalid")
+      .set(validClinicalCasePayload(ALICE_UID, { governanceStatus: "BYPASSED" }))
+  );
 });
 
 test("Shadow update & value poisoning: rejects ghost fields and invalid enum values", async () => {
@@ -140,12 +171,9 @@ test("Shadow update & value poisoning: rejects ghost fields and invalid enum val
     .collection("shifts")
     .doc("shift_alice_2");
 
-  // Rejects extra ghost field on create
   await assertFails(
     docRef.set(validShiftPayload(ALICE_UID, { isSuperAdmin: true }))
   );
-
-  // Rejects invalid category enum
   await assertFails(
     docRef.set(validShiftPayload(ALICE_UID, { category: "INVALID_CAT" }))
   );

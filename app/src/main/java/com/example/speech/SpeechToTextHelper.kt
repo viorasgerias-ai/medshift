@@ -7,8 +7,8 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import com.example.governance.LgpdTextRedactor
 import com.example.ui.ParsedVoiceShift
-import com.example.ui.ShiftViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.Schema
@@ -33,8 +33,8 @@ sealed interface SpeechRecognitionState {
 }
 
 /**
- * Encapsulates Android SpeechRecognizer boilerplate and Firebase AI Logic (Gemini)
- * structured voice command extraction for creating clinical and administrative shifts.
+ * Encapsulates Android SpeechRecognizer boilerplate, automatic LGPD PII redaction,
+ * and Firebase AI Logic (Gemini) structured voice command extraction.
  */
 class SpeechToTextManager(private val context: Context) {
 
@@ -84,7 +84,8 @@ class SpeechToTextManager(private val context: Context) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val topTranscript = matches?.firstOrNull()?.trim().orEmpty()
                 if (topTranscript.isNotEmpty()) {
-                    _recognitionState.value = SpeechRecognitionState.FinalResult(topTranscript)
+                    val sanitizedTranscript = LgpdTextRedactor.redact(topTranscript)
+                    _recognitionState.value = SpeechRecognitionState.FinalResult(sanitizedTranscript)
                 } else {
                     _recognitionState.value =
                         SpeechRecognitionState.Error("Nenhuma fala reconhecida. Tente novamente.")
@@ -96,7 +97,8 @@ class SpeechToTextManager(private val context: Context) {
                     partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val partial = partialMatches?.firstOrNull()?.trim().orEmpty()
                 if (partial.isNotEmpty()) {
-                    _recognitionState.value = SpeechRecognitionState.PartialResult(partial)
+                    val sanitizedPartial = LgpdTextRedactor.redact(partial)
+                    _recognitionState.value = SpeechRecognitionState.PartialResult(sanitizedPartial)
                 }
             }
 
@@ -147,7 +149,7 @@ class SpeechToTextManager(private val context: Context) {
 
 /**
  * Uses Firebase AI Logic (Gemini 3.8 Flash) with structured JSON schema output
- * to parse spoken Speech-to-Text transcripts into structured shift records.
+ * to parse spoken Speech-to-Text transcripts into structured shift records after LGPD PII redaction.
  */
 class FirebaseVoiceAiExtractor {
 
@@ -186,10 +188,11 @@ class FirebaseVoiceAiExtractor {
 
     suspend fun extractShiftFromSpeech(transcript: String): Result<ParsedVoiceShift> {
         return try {
+            val sanitizedTranscript = LgpdTextRedactor.redact(transcript)
             val prompt = """
-                Extraia os dados estruturados de um plantão médico ou administrativo a partir deste comando de voz (Speech-to-Text):
-                "$transcript"
-                Preencha campos ausentes com valores clínicos brasileiros realistas em português.
+                Extraia os dados estruturados de um plantão médico ou administrativo a partir deste comando de voz (Speech-to-Text já saneado pela LGPD):
+                "$sanitizedTranscript"
+                Preencha campos ausentes com valores clínicos brasileiros realistas em português. Preserve marcadores [CPF REDIGIDO - LGPD] ou [EMAIL REDIGIDO - LGPD] caso apareçam nas notas.
             """.trimIndent()
 
             val response = withTimeout(60_000L) {
@@ -199,19 +202,21 @@ class FirebaseVoiceAiExtractor {
                 ?: throw IllegalStateException("Modelo Gemini retornou resposta vazia.")
 
             val json = JSONObject(jsonString)
-            val parsed = ParsedVoiceShift(
-                staffName = json.optString("staffName").ifBlank { "Dr. Eduardo Santoro" },
-                roleTitle = json.optString("roleTitle").ifBlank { "Médico Plantonista" },
-                crmOrRegistry = json.optString("crmOrRegistry").ifBlank { "CRM-SP 186.420" },
-                department = json.optString("department").ifBlank { "UTI Adulto" },
-                category = json.optString("category", "MEDICAL"),
-                shiftStatus = json.optString("shiftStatus", "CURRENT"),
-                shiftTimeLabel = json.optString("shiftTimeLabel").ifBlank { "07:00 – 19:00 (12h)" },
-                dateLabel = json.optString("dateLabel").ifBlank { "Hoje • Criado por Voz" },
-                locationRoom = json.optString("locationRoom").ifBlank { "Ala Central • Leitos 01–10" },
-                permissionLevel = json.optString("permissionLevel").ifBlank { "Acesso Clínico Plantonista" },
-                notes = json.optString("notes").ifBlank { "Comando de voz: \"$transcript\"" },
-                isOnCall = json.optBoolean("isOnCall", false)
+            val parsed = LgpdTextRedactor.sanitizeParsedVoiceShift(
+                ParsedVoiceShift(
+                    staffName = json.optString("staffName").ifBlank { "Dr. Eduardo Santoro" },
+                    roleTitle = json.optString("roleTitle").ifBlank { "Médico Plantonista" },
+                    crmOrRegistry = json.optString("crmOrRegistry").ifBlank { "CRM-SP 186.420" },
+                    department = json.optString("department").ifBlank { "UTI Adulto" },
+                    category = json.optString("category", "MEDICAL"),
+                    shiftStatus = json.optString("shiftStatus", "CURRENT"),
+                    shiftTimeLabel = json.optString("shiftTimeLabel").ifBlank { "07:00 – 19:00 (12h)" },
+                    dateLabel = json.optString("dateLabel").ifBlank { "Hoje • Criado por Voz" },
+                    locationRoom = json.optString("locationRoom").ifBlank { "Ala Central • Leitos 01–10" },
+                    permissionLevel = json.optString("permissionLevel").ifBlank { "Acesso Clínico Plantonista" },
+                    notes = json.optString("notes").ifBlank { "Comando de voz: \"$sanitizedTranscript\"" },
+                    isOnCall = json.optBoolean("isOnCall", false)
+                )
             )
             Result.success(parsed)
         } catch (e: TimeoutCancellationException) {
@@ -225,3 +230,4 @@ class FirebaseVoiceAiExtractor {
         }
     }
 }
+

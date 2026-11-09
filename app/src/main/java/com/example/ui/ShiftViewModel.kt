@@ -8,6 +8,11 @@ import com.example.data.CloudShift
 import com.example.data.CloudShiftRepository
 import com.example.data.ShiftEntity
 import com.example.data.ShiftRepository
+import com.example.governance.ClinicalCaseEntity
+import com.example.governance.CloudClinicalCase
+import com.example.governance.GovernanceStatus
+import com.example.governance.LgpdTextRedactor
+import com.example.governance.TcriaGovernanceEngine
 import com.example.speech.FirebaseVoiceAiExtractor
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -18,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val TAG = "ShiftViewModel"
@@ -29,6 +35,30 @@ enum class ShiftFilter(val label: String) {
     MEDICAL("Corpo Clínico"),
     ADMIN("Administrativo")
 }
+
+enum class GovernanceLayerFilter(val label: String) {
+    ALL("Pipeline Completo"),
+    OFFICIAL_AUDIT("1ª Camada • Válidos"),
+    BLOCKED_REVIEW("2ª Camada • Bloqueados/Frágeis")
+}
+
+data class ClinicAnchorConfig(
+    val clinicName: String = "Clínica Médicos a Postos • Unidade Central",
+    val uf: String = "RJ",
+    val specialty: String = "Clínica Geral & Emergência",
+    val defaultCrm: String = "CRM-RJ 52.10482-9"
+)
+
+data class GovernanceCasesUiState(
+    val clinicConfig: ClinicAnchorConfig = ClinicAnchorConfig(),
+    val allCases: List<ClinicalCaseEntity> = emptyList(),
+    val visibleCases: List<ClinicalCaseEntity> = emptyList(),
+    val selectedLayerFilter: GovernanceLayerFilter = GovernanceLayerFilter.ALL,
+    val validCount: Int = 0,
+    val weakCount: Int = 0,
+    val blockedCount: Int = 0,
+    val invalidCount: Int = 0
+)
 
 data class ParsedVoiceShift(
     val staffName: String,
@@ -63,9 +93,13 @@ data class ShiftSummaryUiState(
     val onCallCount: Int = 0,
     val selectedFilter: ShiftFilter = ShiftFilter.ALL,
     val searchQuery: String = "",
+    val selectedShiftIds: Set<Int> = emptySet(),
     val cloudSyncError: String? = null,
     val isLoading: Boolean = true
-)
+) {
+    val isMultiSelectMode: Boolean
+        get() = selectedShiftIds.isNotEmpty()
+}
 
 class ShiftViewModel(
     private val repository: ShiftRepository,
@@ -75,7 +109,11 @@ class ShiftViewModel(
 
     private val _selectedFilter = MutableStateFlow(ShiftFilter.ALL)
     private val _searchQuery = MutableStateFlow("")
+    private val _selectedShiftIds = MutableStateFlow<Set<Int>>(emptySet())
     private val _cloudSyncError = MutableStateFlow<String?>(null)
+
+    private val _clinicConfig = MutableStateFlow(ClinicAnchorConfig())
+    private val _governanceLayerFilter = MutableStateFlow(GovernanceLayerFilter.ALL)
 
     private val _voiceAiState = MutableStateFlow<VoiceAiUiState>(VoiceAiUiState.Idle)
     val voiceAiState: StateFlow<VoiceAiUiState> = _voiceAiState.asStateFlow()
@@ -85,6 +123,7 @@ class ShiftViewModel(
             repository.seedInitialDataIfEmpty()
         }
         observeCloudShiftsIfConfigured()
+        observeCloudCasesIfConfigured()
     }
 
     private fun observeCloudShiftsIfConfigured() {
@@ -107,13 +146,64 @@ class ShiftViewModel(
         }
     }
 
+    private fun observeCloudCasesIfConfigured() {
+        val cloudRepo = cloudRepository ?: return
+        viewModelScope.launch {
+            cloudRepo.observeClinicalCases()
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    Log.w(TAG, "Error observing cloud clinical cases", firestoreError ?: error)
+                }
+                .collect { cloudCases ->
+                    repository.syncCloudCasesToRoom(cloudCases)
+                }
+        }
+    }
+
+    val governanceUiState: StateFlow<GovernanceCasesUiState> = combine(
+        repository.allClinicalCases,
+        _clinicConfig,
+        _governanceLayerFilter
+    ) { allCases, clinicCfg, layerFilter ->
+        val visible = when (layerFilter) {
+            GovernanceLayerFilter.ALL -> allCases
+            GovernanceLayerFilter.OFFICIAL_AUDIT -> allCases.filter {
+                it.governanceStatus == GovernanceStatus.VALID.name
+            }
+            GovernanceLayerFilter.BLOCKED_REVIEW -> allCases.filter {
+                it.governanceStatus != GovernanceStatus.VALID.name
+            }
+        }
+        GovernanceCasesUiState(
+            clinicConfig = clinicCfg,
+            allCases = allCases,
+            visibleCases = visible,
+            selectedLayerFilter = layerFilter,
+            validCount = allCases.count { it.governanceStatus == GovernanceStatus.VALID.name },
+            weakCount = allCases.count { it.governanceStatus == GovernanceStatus.WEAK.name },
+            blockedCount = allCases.count { it.governanceStatus == GovernanceStatus.BLOCKED.name },
+            invalidCount = allCases.count { it.governanceStatus == GovernanceStatus.INVALID.name }
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000L),
+        initialValue = GovernanceCasesUiState()
+    )
+
+
     val uiState: StateFlow<ShiftSummaryUiState> = combine(
         repository.allShifts,
         _selectedFilter,
         _searchQuery,
+        _selectedShiftIds,
         _cloudSyncError
-    ) { allShifts, filter, query, syncErr ->
+    ) { allShifts, filter, query, selectedIds, syncErr ->
         val normalizedQuery = query.trim().lowercase()
+        val existingIds = allShifts.map { it.id }.toSet()
+        val activeSelectedIds = selectedIds.intersect(existingIds)
 
         val filtered = allShifts.filter { shift ->
             val matchesFilter = when (filter) {
@@ -149,6 +239,7 @@ class ShiftViewModel(
             onCallCount = allShifts.count { it.isOnCall && it.shiftStatus != "COMPLETED" },
             selectedFilter = filter,
             searchQuery = query,
+            selectedShiftIds = activeSelectedIds,
             cloudSyncError = syncErr,
             isLoading = false
         )
@@ -166,14 +257,57 @@ class ShiftViewModel(
         _searchQuery.value = query
     }
 
+    fun toggleShiftSelection(shiftId: Int) {
+        _selectedShiftIds.update { current ->
+            if (shiftId in current) current - shiftId else current + shiftId
+        }
+    }
+
+    fun selectAllVisibleShifts() {
+        val state = uiState.value
+        val visibleIds = (state.currentShifts + state.upcomingShifts + state.completedShifts)
+            .map { it.id }
+            .toSet()
+        _selectedShiftIds.value = visibleIds
+    }
+
+    fun clearSelection() {
+        _selectedShiftIds.value = emptySet()
+    }
+
+    fun deleteSelectedShifts(onDeletedCount: (Int) -> Unit = {}) {
+        val state = uiState.value
+        val selectedIds = state.selectedShiftIds
+        if (selectedIds.isEmpty()) return
+
+        val allVisibleAndKnown = state.currentShifts + state.upcomingShifts + state.completedShifts
+        val selectedShifts = allVisibleAndKnown.filter { it.id in selectedIds }
+        val roomIdsToDelete = selectedIds.toList()
+        val firebaseIdsToDelete = selectedShifts.mapNotNull {
+            it.firebaseDocId.takeIf { docId -> docId.isNotBlank() }
+        }
+
+        _selectedShiftIds.value = emptySet()
+        onDeletedCount(roomIdsToDelete.size)
+
+        viewModelScope.launch {
+            repository.deleteByIds(roomIdsToDelete)
+            if (firebaseIdsToDelete.isNotEmpty() && cloudRepository != null) {
+                try {
+                    cloudRepository.deleteShifts(firebaseIdsToDelete)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to bulk-delete shifts from Firestore", e)
+                }
+            }
+        }
+    }
+
     fun resetVoiceAiState() {
         _voiceAiState.value = VoiceAiUiState.Idle
     }
 
-    /**
-     * Uses Firebase AI Logic (Gemini 3.8 Flash) to parse a spoken Speech-to-Text command
-     * into structured shift fields, surfacing any AI error transparently to UI state.
-     */
     fun extractVoiceCommandWithFirebaseAi(transcript: String) {
         if (transcript.isBlank()) {
             _voiceAiState.value = VoiceAiUiState.Error("Diga ou selecione um comando de voz antes de extrair.")
@@ -181,12 +315,13 @@ class ShiftViewModel(
         }
         viewModelScope.launch {
             _voiceAiState.value = VoiceAiUiState.Extracting
-            val result = voiceAiExtractor.extractShiftFromSpeech(transcript)
+            val sanitizedTranscript = LgpdTextRedactor.redact(transcript)
+            val result = voiceAiExtractor.extractShiftFromSpeech(sanitizedTranscript)
             result.fold(
                 onSuccess = { parsed ->
                     _voiceAiState.value = VoiceAiUiState.Success(
-                        parsed = parsed,
-                        sourceLabel = "Extraído via Firebase AI Logic (Gemini)"
+                        parsed = LgpdTextRedactor.sanitizeParsedVoiceShift(parsed),
+                        sourceLabel = "Extraído via Firebase AI Logic (Gemini) • Saneado LGPD"
                     )
                 },
                 onFailure = { error ->
@@ -221,21 +356,21 @@ class ShiftViewModel(
                 else -> 10
             }
 
-            val resolvedName = staffName.ifBlank { "Profissional Plantonista" }
-            val resolvedRole = roleTitle.ifBlank { "Médico Plantonista" }
-            val resolvedCrm = crmOrRegistry.ifBlank { "CRM-SP 204.510" }
-            val resolvedDept = department.ifBlank { "Clínica Geral" }
+            val resolvedName = LgpdTextRedactor.redact(staffName.ifBlank { "Profissional Plantonista" })
+            val resolvedRole = LgpdTextRedactor.redact(roleTitle.ifBlank { "Médico Plantonista" })
+            val resolvedCrm = LgpdTextRedactor.redact(crmOrRegistry.ifBlank { "CRM-SP 204.510" })
+            val resolvedDept = LgpdTextRedactor.redact(department.ifBlank { "Clínica Geral" })
             val resolvedTime = shiftTimeLabel.ifBlank { "07:00 – 19:00 (12h)" }
             val resolvedDate = dateLabel.ifBlank {
                 if (shiftStatus == "CURRENT") "Hoje • Em Plantão" else "Próximo Turno"
             }
-            val resolvedRoom = locationRoom.ifBlank { "Ala Central • Consultório 02" }
+            val resolvedRoom = LgpdTextRedactor.redact(locationRoom.ifBlank { "Ala Central • Consultório 02" })
             val resolvedPermission = permissionLevel.ifBlank {
                 if (category == "ADMIN") "Gestão de Escalas & Permissões" else "Acesso Clínico Plantonista"
             }
-            val resolvedNotes = notes.ifBlank { "Plantão registrado no controle clínico." }
+            val resolvedNotes = LgpdTextRedactor.redact(notes.ifBlank { "Plantão registrado no controle clínico." })
+            val resolvedTranscript = LgpdTextRedactor.redact(voiceTranscript)
 
-            // 1. Save to Firebase Firestore backend if authenticated
             var firebaseDocId = ""
             if (cloudRepository != null) {
                 try {
@@ -252,7 +387,7 @@ class ShiftViewModel(
                             locationRoom = resolvedRoom,
                             permissionLevel = resolvedPermission,
                             notes = resolvedNotes,
-                            voiceTranscript = voiceTranscript,
+                            voiceTranscript = resolvedTranscript,
                             isOnCall = isOnCall,
                             createdViaVoice = createdViaVoice
                         )
@@ -265,7 +400,6 @@ class ShiftViewModel(
                 }
             }
 
-            // 2. Persist immediately to local Room database for instant offline-first availability
             val newShift = ShiftEntity(
                 firebaseDocId = firebaseDocId,
                 staffName = resolvedName,
@@ -279,7 +413,7 @@ class ShiftViewModel(
                 locationRoom = resolvedRoom,
                 permissionLevel = resolvedPermission,
                 notes = resolvedNotes,
-                voiceTranscript = voiceTranscript,
+                voiceTranscript = resolvedTranscript,
                 progressFraction = if (shiftStatus == "CURRENT") 0.25f else 0.0f,
                 isOnCall = isOnCall,
                 createdViaVoice = createdViaVoice,
@@ -336,6 +470,7 @@ class ShiftViewModel(
     }
 
     fun deleteShift(shift: ShiftEntity) {
+        _selectedShiftIds.update { it - shift.id }
         viewModelScope.launch {
             repository.deleteById(shift.id)
             if (shift.firebaseDocId.isNotBlank() && cloudRepository != null) {
@@ -350,9 +485,128 @@ class ShiftViewModel(
         }
     }
 
+    fun setGovernanceLayerFilter(filter: GovernanceLayerFilter) {
+        _governanceLayerFilter.value = filter
+    }
+
+    fun updateClinicAnchorConfig(
+        clinicName: String,
+        uf: String,
+        specialty: String,
+        defaultCrm: String
+    ) {
+        _clinicConfig.value = ClinicAnchorConfig(
+            clinicName = clinicName.ifBlank { "Clínica Médicos a Postos • Unidade Central" },
+            uf = uf.ifBlank { "RJ" }.uppercase(),
+            specialty = specialty.ifBlank { "Clínica Geral" },
+            defaultCrm = defaultCrm.ifBlank { "CRM-RJ 52.10482-9" }
+        )
+    }
+
+    fun addClinicalCase(
+        projectClinicAnchor: String,
+        clinicUf: String,
+        clinicSpecialty: String,
+        caseReference: String,
+        responsibleHuman: String,
+        declaredPurpose: String,
+        contextScope: String,
+        evidencias: String,
+        raciocinio: String,
+        decisao: String,
+        deidentificationConfirmed: Boolean,
+        createdViaVoice: Boolean = false
+    ) {
+        viewModelScope.launch {
+            val cleanReference = LgpdTextRedactor.redact(caseReference)
+            val cleanResponsible = LgpdTextRedactor.redact(responsibleHuman)
+            val cleanPurpose = LgpdTextRedactor.redact(declaredPurpose)
+            val cleanContext = LgpdTextRedactor.redact(contextScope)
+            val cleanEvidencias = LgpdTextRedactor.redact(evidencias)
+            val cleanRaciocinio = LgpdTextRedactor.redact(raciocinio)
+            val cleanDecisao = LgpdTextRedactor.redact(decisao)
+
+            val eval = TcriaGovernanceEngine.evaluateCase(
+                projectClinicAnchor = projectClinicAnchor,
+                caseReference = cleanReference,
+                responsibleHuman = cleanResponsible,
+                declaredPurpose = cleanPurpose,
+                contextScope = cleanContext,
+                evidencias = cleanEvidencias,
+                raciocinio = cleanRaciocinio,
+                decisao = cleanDecisao,
+                deidentificationConfirmed = deidentificationConfirmed
+            )
+
+            var firebaseDocId = ""
+            if (cloudRepository != null) {
+                try {
+                    firebaseDocId = cloudRepository.createClinicalCase(
+                        CloudClinicalCase(
+                            projectClinicAnchor = projectClinicAnchor,
+                            clinicUf = clinicUf,
+                            clinicSpecialty = clinicSpecialty,
+                            caseReference = cleanReference,
+                            responsibleHuman = cleanResponsible,
+                            declaredPurpose = cleanPurpose,
+                            contextScope = cleanContext,
+                            evidencias = cleanEvidencias,
+                            raciocinio = cleanRaciocinio,
+                            decisao = cleanDecisao,
+                            deidentificationConfirmed = deidentificationConfirmed,
+                            governanceStatus = eval.overallStatus.name,
+                            governanceReport = eval.auditSummary,
+                            createdViaVoice = createdViaVoice
+                        )
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to sync clinical case to Firestore", e)
+                }
+            }
+
+            repository.insertClinicalCase(
+                ClinicalCaseEntity(
+                    firebaseDocId = firebaseDocId,
+                    projectClinicAnchor = projectClinicAnchor,
+                    clinicUf = clinicUf,
+                    clinicSpecialty = clinicSpecialty,
+                    caseReference = cleanReference,
+                    responsibleHuman = cleanResponsible,
+                    declaredPurpose = cleanPurpose,
+                    contextScope = cleanContext,
+                    evidencias = cleanEvidencias,
+                    raciocinio = cleanRaciocinio,
+                    decisao = cleanDecisao,
+                    deidentificationConfirmed = deidentificationConfirmed,
+                    governanceStatus = eval.overallStatus.name,
+                    governanceReport = eval.auditSummary,
+                    createdViaVoice = createdViaVoice
+                )
+            )
+        }
+    }
+
+    fun deleteClinicalCase(clinicalCase: ClinicalCaseEntity) {
+        viewModelScope.launch {
+            repository.deleteClinicalCaseById(clinicalCase.id)
+            if (clinicalCase.firebaseDocId.isNotBlank() && cloudRepository != null) {
+                try {
+                    cloudRepository.deleteClinicalCase(clinicalCase.firebaseDocId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to delete clinical case from Firestore", e)
+                }
+            }
+        }
+    }
+
+
     companion object {
         fun parseVoiceTranscript(transcript: String): ParsedVoiceShift {
-            val clean = transcript.trim()
+            val clean = LgpdTextRedactor.redact(transcript.trim())
             val lower = clean.lowercase()
 
             val isAdmin = lower.contains("admin") ||
@@ -403,7 +657,7 @@ class ShiftViewModel(
                 val personName = match.groupValues[1].split(" ")
                     .filter { word ->
                         val w = word.lowercase()
-                        w !in listOf("na", "no", "em", "para", "plantão", "turno", "uti", "hoje", "amanhã")
+                        w !in listOf("na", "no", "em", "para", "plantão", "turno", "uti", "hoje", "amanhã", "cpf")
                     }
                     .joinToString(" ") { part ->
                         part.replaceFirstChar { it.uppercase() }
@@ -417,19 +671,21 @@ class ShiftViewModel(
                 "07:00 – 19:00 (12h)"
             }
 
-            return ParsedVoiceShift(
-                staffName = matchedName,
-                roleTitle = roleTitle,
-                crmOrRegistry = if (isAdmin) "ADM-CL 0941" else "CRM-SP 186.420",
-                department = department,
-                category = if (isAdmin) "ADMIN" else "MEDICAL",
-                shiftStatus = if (isUpcoming) "UPCOMING" else "CURRENT",
-                shiftTimeLabel = timeLabel,
-                dateLabel = if (isUpcoming) "Hoje à Noite • Agendado por Voz" else "Hoje • Em Plantão",
-                locationRoom = "$department • Setor Principal",
-                permissionLevel = if (isAdmin) "Gestão de Escalas & Permissões" else "Acesso Clínico Plantonista",
-                notes = "Comando de voz: \"$clean\"",
-                isOnCall = isOnCall
+            return LgpdTextRedactor.sanitizeParsedVoiceShift(
+                ParsedVoiceShift(
+                    staffName = matchedName,
+                    roleTitle = roleTitle,
+                    crmOrRegistry = if (isAdmin) "ADM-CL 0941" else "CRM-SP 186.420",
+                    department = department,
+                    category = if (isAdmin) "ADMIN" else "MEDICAL",
+                    shiftStatus = if (isUpcoming) "UPCOMING" else "CURRENT",
+                    shiftTimeLabel = timeLabel,
+                    dateLabel = if (isUpcoming) "Hoje à Noite • Agendado por Voz" else "Hoje • Em Plantão",
+                    locationRoom = "$department • Setor Principal",
+                    permissionLevel = if (isAdmin) "Gestão de Escalas & Permissões" else "Acesso Clínico Plantonista",
+                    notes = "Comando de voz: \"$clean\"",
+                    isOnCall = isOnCall
+                )
             )
         }
     }

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Médicos a Postos — Governança Clínica TCRIA & Escala de Plantões</title>
+  <meta name="description" content="Organize casos clínicos, plantões médicos e decisões assistenciais com rastreabilidade TCRIA, proteção LGPD e sincronização Firebase." />
+  <style>
+    :root {
+      --bg: #f4f8f7;
+      --surface: #ffffff;
+      --surface-soft: #e9f3f0;
+      --ink: #14302a;
+      --muted: #4f6963;
+      --primary: #087f67;
+      --primary-dark: #066350;
+      --accent: #d9f3ec;
+      --border: #d5e5e0;
+      --shadow: 0 18px 40px rgba(13, 52, 43, 0.08);
+      --radius: 20px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink);
+      background: linear-gradient(180deg, #eef7f4 0%, var(--bg) 26%, #ffffff 100%);
+      line-height: 1.6;
+    }
+    a { color: inherit; text-decoration: none; }
+    .container { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      backdrop-filter: blur(12px);
+      background: rgba(244, 248, 247, 0.88);
+      border-bottom: 1px solid rgba(213, 229, 224, 0.8);
+    }
+    .topbar-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 14px 0;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: -0.02em; }
+    .brand-badge {
+      width: 40px; height: 40px; border-radius: 12px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--primary), #0ea58a);
+      color: #fff; font-weight: 900; box-shadow: var(--shadow);
+    }
+    .nav { display: flex; align-items: center; gap: 20px; color: var(--muted); font-weight: 600; font-size: 0.95rem; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 13px 20px; border-radius: 999px; font-weight: 700;
+      border: 1px solid transparent; transition: transform 0.15s ease, background 0.2s ease; cursor: pointer;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 12px 26px rgba(8, 127, 103, 0.22); }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary { background: #fff; color: var(--ink); border-color: var(--border); }
+    .hero { padding: 64px 0 36px; }
+    .hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 28px; align-items: center; }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 12px; border-radius: 999px;
+      background: var(--accent); color: var(--primary-dark);
+      font-size: 0.84rem; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase;
+    }
+    h1 {
+      margin: 16px 0 14px;
+      font-size: clamp(2.1rem, 4vw, 3.45rem);
+      line-height: 1.1; letter-spacing: -0.03em;
+    }
+    .lead { font-size: 1.12rem; color: var(--muted); margin: 0 0 24px; max-width: 60ch; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+    .hero-card {
+      background: linear-gradient(180deg, #153932 0%, #0f2924 100%);
+      color: #ecfdf8; border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
+    }
+    .mock-box {
+      padding: 13px 14px; border-radius: 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.09); margin-bottom: 10px;
+    }
+    .mock-box strong {
+      display: block; font-size: 0.8rem; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #9ee7d4; margin-bottom: 4px;
+    }
+    section { padding: 36px 0; }
+    .cards-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow);
+    }
+    @media (max-width: 920px) {
+      .hero-grid, .cards-3 { grid-template-columns: 1fr; }
+      .nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a href="#topo" class="brand">
+        <span class="brand-badge">MP</span>
+        <div>
+          <div>Médicos a Postos</div>
+          <small style="display:block;color:var(--muted);font-weight:600;font-size:0.76rem;">MedShift • Governança Clínica TCRIA</small>
+        </div>
+      </a>
+      <nav class="nav">
+        <a href="#como-funciona">Governança TCRIA</a>
+        <a href="#beneficios">Escala & Voz IA</a>
+        <a href="#plano">Plano Inicial</a>
+      </nav>
+      <a class="btn btn-primary" href="https://wa.me/5521997875539?text=Quero%20testar%20o%20M%C3%A9dicos%20a%20Postos" target="_blank" rel="noopener">
+        Testar agora
+      </a>
+    </div>
+  </header>
+
+  <main id="topo">
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <span class="eyebrow">Governança Clínica TCRIA + Plantões em Tempo Real</span>
+          <h1>Documentação clínica rastreável para decisões mais claras e seguras.</h1>
+          <p class="lead">
+            Transforme atendimentos, escalas de plantão e acompanhamentos em registros estruturados com
+            <strong>evidências</strong>, <strong>raciocínio clínico</strong>, <strong>conduta</strong> e
+            <strong>5 Gates de Governança TCRIA</strong> com suporte offline Room e sincronização Firebase.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="https://wa.me/5521997875539?text=Quero%20testar%20o%20M%C3%A9dicos%20a%20Postos" target="_blank" rel="noopener">
+              Quero testar o sistema
+            </a>
+            <a class="btn btn-secondary" href="#como-funciona">Ver os 5 Gates TCRIA</a>
+          </div>
+        </div>
+
+        <aside class="hero-card">
+          <div style="margin-bottom:14px;">
+            <small style="color:#9ee7d4;font-weight:700;">EXEMPLO DE REGISTRO RASTREÁVEL (TCRIA 5/5)</small>
+            <div style="font-size:1.1rem;font-weight:800;">Caso #001 — Atendimento inicial</div>
+          </div>
+          <div class="mock-box">
+            <strong>RULE 1.1 & 1.2 • Âncora e Contexto</strong>
+            <span>Clínica Médicos a Postos (RJ) • Observação clínica 48h</span>
+          </div>
+          <div class="mock-box">
+            <strong>RULE 2.1 • Evidências</strong>
+            <span>Queixa álgica há 48h, ECG sem supra de ST e troponina negativa.</span>
+          </div>
+          <div class="mock-box">
+            <strong>RULE 2.2 • Raciocínio clínico</strong>
+            <span>Evolução compatível com quadro subagudo sem sinais de alarme coronariano.</span>
+          </div>
+          <div class="mock-box">
+            <strong>RULE 3.2 & 4.1 • Conduta & Responsável</strong>
+            <span>Conduta conservadora e retorno em 72h • Dra. Helena Vasconcelos (CRM-RJ).</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="como-funciona">
+      <div class="container cards-3">
+        <article class="card">
+          <h3>1. Âncora & Contexto (RULE 1.1 / 1.2)</h3>
+          <p>Nenhum registro clínico ou plantão fica órfão: vínculo obrigatório com clínica, UF, especialidade, CRM e escopo assistencial.</p>
+        </article>
+        <article class="card">
+          <h3>2. Cadeia Bidirecional (RULE 2.1 / 5.1)</h3>
+          <p>Auditoria automática em 2 camadas separando registros válidos de afirmações frágeis (WEAK) ou bloqueadas (BLOCKED).</p>
+        </article>
+        <article class="card">
+          <h3>3. Guarda LGPD & Voz com IA</h3>
+          <p>Validação de desidentificação (bloqueio de CPF/e-mail em campos clínicos) e entrada rápida por voz com Firebase AI Logic.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

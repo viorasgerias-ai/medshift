@@ -48,6 +48,26 @@ service cloud.firestore {
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidCloudClinicalCase(data) {
+      return data.userId is string && data.userId == request.auth.uid &&
+             data.projectClinicAnchor is string && data.projectClinicAnchor.size() >= 1 && data.projectClinicAnchor.size() <= 140 &&
+             data.clinicUf is string && data.clinicUf.size() >= 2 && data.clinicUf.size() <= 10 &&
+             data.clinicSpecialty is string && data.clinicSpecialty.size() >= 1 && data.clinicSpecialty.size() <= 100 &&
+             data.caseReference is string && data.caseReference.size() >= 1 && data.caseReference.size() <= 120 &&
+             data.responsibleHuman is string && data.responsibleHuman.size() >= 1 && data.responsibleHuman.size() <= 140 &&
+             data.declaredPurpose is string && data.declaredPurpose.size() >= 1 && data.declaredPurpose.size() <= 200 &&
+             data.contextScope is string && data.contextScope.size() <= 500 &&
+             data.evidencias is string && data.evidencias.size() <= 1000 &&
+             data.raciocinio is string && data.raciocinio.size() <= 1000 &&
+             data.decisao is string && data.decisao.size() <= 1000 &&
+             data.deidentificationConfirmed is bool &&
+             data.governanceStatus is string && (data.governanceStatus == 'VALID' || data.governanceStatus == 'WEAK' || data.governanceStatus == 'BLOCKED' || data.governanceStatus == 'INVALID') &&
+             data.governanceReport is string && data.governanceReport.size() <= 1000 &&
+             data.createdViaVoice is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     match /users/{userId}/shifts/{shiftId} {
       allow get: if isOwner(userId) && isValidId(userId) && isValidId(shiftId) && existing().userId == request.auth.uid;
       allow list: if isOwner(userId) && existing().userId == request.auth.uid;
@@ -83,6 +103,46 @@ service cloud.firestore {
                        ]);
 
       allow delete: if isOwner(userId) && isValidId(userId) && isValidId(shiftId) && existing().userId == request.auth.uid;
+    }
+
+    match /users/{userId}/clinical_cases/{caseId} {
+      allow get: if isOwner(userId) && isValidId(userId) && isValidId(caseId) && existing().userId == request.auth.uid;
+      allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidId(caseId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'projectClinicAnchor', 'clinicUf', 'clinicSpecialty',
+                         'caseReference', 'responsibleHuman', 'declaredPurpose',
+                         'contextScope', 'evidencias', 'raciocinio', 'decisao',
+                         'deidentificationConfirmed', 'governanceStatus', 'governanceReport',
+                         'createdViaVoice', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'projectClinicAnchor', 'clinicUf', 'clinicSpecialty',
+                         'caseReference', 'responsibleHuman', 'declaredPurpose',
+                         'contextScope', 'evidencias', 'raciocinio', 'decisao',
+                         'deidentificationConfirmed', 'governanceStatus', 'governanceReport',
+                         'createdViaVoice', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidCloudClinicalCase(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidId(caseId) &&
+                       isValidCloudClinicalCase(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'projectClinicAnchor', 'clinicUf', 'clinicSpecialty',
+                         'caseReference', 'responsibleHuman', 'declaredPurpose',
+                         'contextScope', 'evidencias', 'raciocinio', 'decisao',
+                         'deidentificationConfirmed', 'governanceStatus', 'governanceReport',
+                         'createdViaVoice', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(caseId) && existing().userId == request.auth.uid;
     }
   }
 }

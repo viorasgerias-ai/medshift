@@ -97,6 +97,103 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "CloudClinicalCase": {
+      "title": "CloudClinicalCase",
+      "description": "Traceable clinical decision and TCRIA governance record.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated owner UID of the clinical case record."
+        },
+        "projectClinicAnchor": {
+          "type": "string",
+          "description": "RULE 1.1: Linked clinic or project anchor name."
+        },
+        "clinicUf": {
+          "type": "string",
+          "description": "Two-letter state code of the clinic."
+        },
+        "clinicSpecialty": {
+          "type": "string",
+          "description": "Medical specialty of the clinic."
+        },
+        "caseReference": {
+          "type": "string",
+          "description": "Patient alias or de-identified case reference code."
+        },
+        "responsibleHuman": {
+          "type": "string",
+          "description": "RULE 4.1: Accountable clinician and CRM."
+        },
+        "declaredPurpose": {
+          "type": "string",
+          "description": "RULE 4.1: Declared purpose of the clinical decision record."
+        },
+        "contextScope": {
+          "type": "string",
+          "description": "RULE 1.2: Clinical context, scope, and conditions."
+        },
+        "evidencias": {
+          "type": "string",
+          "description": "RULE 2.1: Clinical evidence, exams, and observations."
+        },
+        "raciocinio": {
+          "type": "string",
+          "description": "RULE 2.2: Clinical reasoning connecting evidence to decision."
+        },
+        "decisao": {
+          "type": "string",
+          "description": "RULE 3.1: Documented clinical conduct or decision."
+        },
+        "deidentificationConfirmed": {
+          "type": "boolean",
+          "description": "Whether de-identification of sensitive PII was confirmed."
+        },
+        "governanceStatus": {
+          "type": "string",
+          "enum": ["VALID", "WEAK", "BLOCKED", "INVALID"],
+          "description": "TCRIA governance gate evaluation outcome."
+        },
+        "governanceReport": {
+          "type": "string",
+          "description": "Diagnostic report from TCRIA governance gates."
+        },
+        "createdViaVoice": {
+          "type": "boolean",
+          "description": "Whether the clinical case was dictated via Speech-to-Text."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation (must use FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update (must use FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "projectClinicAnchor",
+        "clinicUf",
+        "clinicSpecialty",
+        "caseReference",
+        "responsibleHuman",
+        "declaredPurpose",
+        "contextScope",
+        "evidencias",
+        "raciocinio",
+        "decisao",
+        "deidentificationConfirmed",
+        "governanceStatus",
+        "governanceReport",
+        "createdViaVoice",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -105,6 +202,12 @@
         "$ref": "#/entities/CloudShift"
       },
       "description": "Per-user isolated collection of medical and administrative staff shifts."
+    },
+    "/users/{userId}/clinical_cases/{caseId}": {
+      "schema": {
+        "$ref": "#/entities/CloudClinicalCase"
+      },
+      "description": "Per-user isolated collection of TCRIA-governed clinical decision records."
     }
   }
 }

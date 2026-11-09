@@ -1,0 +1,36 @@
+steps:
+  # 1. Build and push the Cloud Run serverless container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/medshift-tcria-api:$COMMIT_SHA'
+      - './backend-cloudrun'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/medshift-tcria-api:$COMMIT_SHA'
+
+  # 2. Deploy serverless container to Google Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'medshift-tcria-api'
+      - '--image'
+      - 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/medshift-tcria-api:$COMMIT_SHA'
+      - '--region'
+      - 'southamerica-east1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--min-instances'
+      - '0'
+      - '--max-instances'
+      - '10'
+      - '--memory'
+      - '512Mi'
+options:
+  logging: CLOUD_LOGGING_ONLY

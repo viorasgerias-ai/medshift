@@ -1,0 +1,13 @@
+.gradle/
+.kotlin/
+build/
+app/build/
+node_modules/
+**/node_modules/
+*.apk
+*.aab
+*.jks
+*.keystore
+*.log
+.env
+.git/

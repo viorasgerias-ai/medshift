@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.Button
@@ -49,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -68,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
+import com.example.governance.LgpdTextRedactor
 import com.example.speech.SpeechRecognitionState
 import com.example.speech.SpeechToTextManager
 
@@ -389,10 +392,10 @@ fun AddShiftBottomSheet(
                         else -> Unit
                     }
 
-                    // Instant Voice Preset Chips
+                    // Instant Voice Preset Chips (including LGPD PII auto-redaction test phrase)
                     val voicePresets = listOf(
                         "Dra. Mariana Costa intensivista na UTI Adulto plantão hoje",
-                        "Dr. Bruno Silveira cirurgião no Centro Cirúrgico plantão noturno sobreaviso",
+                        "Dr. Bruno Silveira na UTI paciente CPF 123.456.789-00 contato paciente@hospital.org",
                         "Coordenador Roberto Dias na Administração plantão diurno"
                     )
                     Row(
@@ -408,10 +411,11 @@ fun AddShiftBottomSheet(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(50))
                                     .clickable {
-                                        voiceTranscript = phrase
-                                        val localParsed = ShiftViewModel.parseVoiceTranscript(phrase)
-                                        applyParsedShift(localParsed, phrase)
-                                        onExtractWithFirebaseAi(phrase)
+                                        val sanitizedPhrase = LgpdTextRedactor.redact(phrase)
+                                        voiceTranscript = sanitizedPhrase
+                                        val localParsed = ShiftViewModel.parseVoiceTranscript(sanitizedPhrase)
+                                        applyParsedShift(localParsed, sanitizedPhrase)
+                                        onExtractWithFirebaseAi(sanitizedPhrase)
                                     }
                                     .testTag("voice_preset_$index")
                             ) {
@@ -434,6 +438,105 @@ fun AddShiftBottomSheet(
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Live LGPD PII Redaction Inspection Banner
+            val liveLgpdReport = remember(
+                voiceTranscript,
+                staffName,
+                roleTitle,
+                crmOrRegistry,
+                department,
+                locationRoom,
+                notes
+            ) {
+                LgpdTextRedactor.inspectFields(
+                    voiceTranscript,
+                    staffName,
+                    roleTitle,
+                    crmOrRegistry,
+                    department,
+                    locationRoom,
+                    notes
+                )
+            }
+
+            Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = if (liveLgpdReport.wasRedacted) {
+                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.75f)
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("lgpd_redaction_status_card")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shield,
+                            contentDescription = null,
+                            tint = if (liveLgpdReport.wasRedacted) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            },
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column {
+                            Text(
+                                text = if (liveLgpdReport.wasRedacted) {
+                                    "PII Detectado (${liveLgpdReport.detectedTypes.joinToString { it.label }})"
+                                } else {
+                                    "Filtro Automático LGPD Ativo"
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (liveLgpdReport.wasRedacted) {
+                                    "${liveLgpdReport.redactedCount} dado(s) sensível(is) serão redigidos automaticamente antes de salvar no Room."
+                                } else {
+                                    "CPFs, e-mails, telefones, RG e CNS em voz ou texto são redigidos antes de salvar no Room."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (liveLgpdReport.wasRedacted) {
+                        TextButton(
+                            onClick = {
+                                voiceTranscript = LgpdTextRedactor.redact(voiceTranscript)
+                                staffName = LgpdTextRedactor.redact(staffName)
+                                roleTitle = LgpdTextRedactor.redact(roleTitle)
+                                crmOrRegistry = LgpdTextRedactor.redact(crmOrRegistry)
+                                department = LgpdTextRedactor.redact(department)
+                                locationRoom = LgpdTextRedactor.redact(locationRoom)
+                                notes = LgpdTextRedactor.redact(notes)
+                            },
+                            modifier = Modifier.testTag("btn_redact_pii_now")
+                        ) {
+                            Text(
+                                text = "Redigir Agora",
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -665,20 +768,20 @@ fun AddShiftBottomSheet(
                 Button(
                     onClick = {
                         onSaveShift(
-                            staffName,
-                            roleTitle,
-                            crmOrRegistry,
-                            department,
+                            LgpdTextRedactor.redact(staffName),
+                            LgpdTextRedactor.redact(roleTitle),
+                            LgpdTextRedactor.redact(crmOrRegistry),
+                            LgpdTextRedactor.redact(department),
                             category,
                             shiftStatus,
                             shiftTimeLabel,
                             dateLabel,
-                            locationRoom,
+                            LgpdTextRedactor.redact(locationRoom),
                             permissionLevel,
-                            notes,
+                            LgpdTextRedactor.redact(notes),
                             isOnCall,
                             createdViaVoice,
-                            voiceTranscript
+                            LgpdTextRedactor.redact(voiceTranscript)
                         )
                         onResetVoiceAiState()
                         onDismiss()
@@ -697,3 +800,4 @@ fun AddShiftBottomSheet(
         }
     }
 }
+

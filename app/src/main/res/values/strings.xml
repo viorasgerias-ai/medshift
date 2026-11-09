@@ -27,4 +27,8 @@
     <string name="modal_add_title">Cadastrar Plantão Clínico / Admin</string>
     <string name="btn_save_shift">Salvar no Banco Room</string>
     <string name="btn_cancel">Cancelar</string>
+    <string name="multi_select_hint">Pressione e segure um plantão para seleção múltipla</string>
+    <string name="btn_select_all">Todos</string>
+    <string name="btn_clear_selection">Limpar</string>
+    <string name="btn_bulk_delete">Excluir Selecionados</string>
 </resources>
